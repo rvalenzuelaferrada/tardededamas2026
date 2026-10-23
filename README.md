@@ -67,3 +67,7 @@ En `/admin`, el botón «Consultar palabra de comprobante» permite ingresar la 
 ## Consulta pública del propio voto
 
 La página principal incluye «Consultar mi voto». Pide nombre y apellido tal como se ingresaron al votar y la palabra clave del comprobante. Ambos deben coincidir con una misma papeleta. El endpoint público devuelve únicamente `found: true/false`, sin nombres almacenados, palabras ni regalos elegidos. Ignora mayúsculas, tildes y espacios repetidos. Usa POST y `Cache-Control: no-store`. La consulta con detalle de regalos continúa protegida por la clave de organización y requiere la palabra de comprobante.
+
+## Dominio público y proxy inverso
+
+Si aparece «Solicitud no permitida» en producción, configurar `APP_ORIGIN` con el origen público exacto, por ejemplo `https://votacion.clubdeoratoria.cl`, y reiniciar o redesplegar. El navegador usa HTTPS y el dominio público, mientras el proceso Node puede recibir una URL interna HTTP. La validación compara contra `APP_ORIGIN` cuando está configurada. Sin esa variable, reconoce `X-Forwarded-Host`/`X-Forwarded-Proto` o `Host`; el proxy del hosting debe establecer y sobrescribir estas cabeceras. No se desactiva la validación de solicitudes desde otros sitios.

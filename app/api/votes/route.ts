@@ -1,10 +1,8 @@
+import { isAllowedOrigin } from "@/lib/request-origin";
 import { getDatabase, isDemo, submitNamedVote, VoteError } from "@/lib/store";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
-  if (
-    request.headers.get("origin") &&
-    request.headers.get("origin") !== new URL(request.url).origin
-  )
+  if (!isAllowedOrigin(request))
     return Response.json({ error: "Solicitud no permitida." }, { status: 403 });
   if (process.env.VOTING_OPEN === "false")
     return Response.json(
