@@ -171,3 +171,46 @@ export function verifyPublicVote(
     )
     .get(normalize(word), demo ? 1 : 0, demo ? 1 : 0, normalize(fullName));
 }
+
+export function getAdminVote(
+  db: DatabaseSync,
+  ballotId: unknown,
+  demo: boolean,
+) {
+  if (typeof ballotId !== "string" || !ballotId || ballotId.length > 100)
+    throw new VoteError("Selecciona un voto válido.", 400);
+  const ballot = db
+    .prepare(
+      "SELECT b.id, m.name FROM ballots b JOIN members m ON m.id=b.member_id WHERE b.id=? AND m.demo=?",
+    )
+    .get(ballotId, demo ? 1 : 0);
+  if (!ballot)
+    throw new VoteError("El voto ya no existe. Actualiza los resultados.", 404);
+  const giftIds = db
+    .prepare("SELECT gift_id FROM choices WHERE ballot_id=? ORDER BY gift_id")
+    .all(ballotId)
+    .map((row) => Number(row.gift_id));
+  return { id: String(ballot.id), name: String(ballot.name), giftIds };
+}
+
+export function deleteVote(
+  db: DatabaseSync,
+  ballotId: unknown,
+  confirmed: unknown,
+  demo: boolean,
+) {
+  if (confirmed !== true)
+    throw new VoteError("Confirma la eliminación del voto.", 400);
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const vote = getAdminVote(db, ballotId, demo);
+    db.prepare("DELETE FROM choices WHERE ballot_id=?").run(vote.id);
+    db.prepare("DELETE FROM receipts WHERE ballot_id=?").run(vote.id);
+    db.prepare("DELETE FROM ballots WHERE id=?").run(vote.id);
+    db.exec("COMMIT");
+    return vote;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}

@@ -28,10 +28,10 @@ export async function GET(request: Request) {
       .sort((a, b) => Number(b.votes) - Number(a.votes));
     const voters = db
       .prepare(
-        "SELECT m.name FROM ballots b JOIN members m ON m.id=b.member_id WHERE m.demo=?",
+        "SELECT b.id, m.name FROM ballots b JOIN members m ON m.id=b.member_id WHERE m.demo=?",
       )
       .all(demo)
-      .map((row) => ({ name: String(row.name) }))
+      .map((row) => ({ id: String(row.id), name: String(row.name) }))
       .sort((a, b) =>
         a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
       );

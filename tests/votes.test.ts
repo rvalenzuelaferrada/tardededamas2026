@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDatabase, submitNamedVote, VoteError } from "../lib/store.ts";
+import {
+  openDatabase,
+  submitNamedVote,
+  VoteError,
+  getAdminVote,
+  deleteVote,
+  lookupReceipt,
+} from "../lib/store.ts";
 function database() {
   const dir = mkdtempSync(join(tmpdir(), "damas-test-"));
   const db = openDatabase(join(dir, "test.sqlite"));
@@ -248,5 +255,69 @@ test("simultaneous voters receive different words across independent database co
     assert.equal(new Set(results.flat()).size, 20);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("deleting a confirmed ballot removes choices and receipt, preserves other votes and allows voting again", () => {
+  const f = database();
+  try {
+    const word = submitNamedVote(f.db, "Ana", "Soto", [1, 3], true, false);
+    submitNamedVote(f.db, "Otra", "Persona", [2], true, false);
+    submitNamedVote(f.db, "Ana", "Soto", [4], true, true);
+    const ballotId = String(
+      f.db
+        .prepare(
+          "SELECT b.id FROM ballots b JOIN members m ON m.id=b.member_id WHERE m.name=? AND m.demo=0",
+        )
+        .get("Ana Soto")!.id,
+    );
+    assert.deepEqual(getAdminVote(f.db, ballotId, false).giftIds, [1, 3]);
+    assert.throws(
+      () => deleteVote(f.db, ballotId, false, false),
+      (e: unknown) => e instanceof VoteError && e.status === 400,
+    );
+    assert.throws(
+      () => deleteVote(f.db, ballotId, true, true),
+      (e: unknown) => e instanceof VoteError && e.status === 404,
+    );
+    assert.deepEqual(getAdminVote(f.db, ballotId, false).giftIds, [1, 3]);
+    deleteVote(f.db, ballotId, true, false);
+    assert.equal(lookupReceipt(f.db, word, false), null);
+    assert.equal(
+      f.db
+        .prepare("SELECT count(*) AS n FROM choices WHERE ballot_id=?")
+        .get(ballotId)!.n,
+      0,
+    );
+    assert.equal(f.db.prepare("SELECT count(*) AS n FROM ballots").get()!.n, 2);
+    assert.equal(
+      f.db.prepare("SELECT count(*) AS n FROM receipts").get()!.n,
+      2,
+    );
+    assert.equal(f.db.prepare("SELECT count(*) AS n FROM members").get()!.n, 3);
+    assert.throws(
+      () => deleteVote(f.db, ballotId, true, false),
+      (e: unknown) => e instanceof VoteError && e.status === 404,
+    );
+    submitNamedVote(f.db, "Ana", "Soto", [5], true, false);
+    assert.equal(f.db.prepare("SELECT count(*) AS n FROM ballots").get()!.n, 3);
+  } finally {
+    f.close();
+  }
+});
+
+test("ballot deletion rolls back all changes if a database operation fails", () => {
+  const f = database();
+  try {
+    const word = submitNamedVote(f.db, "Ana", "Soto", [1, 2], true, false);
+    const id = String(f.db.prepare("SELECT id FROM ballots").get()!.id);
+    f.db.exec(
+      "CREATE TRIGGER prevent_ballot_delete BEFORE DELETE ON ballots BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
+    );
+    assert.throws(() => deleteVote(f.db, id, true, false));
+    assert.deepEqual(getAdminVote(f.db, id, false).giftIds, [1, 2]);
+    assert.ok(lookupReceipt(f.db, word, false));
+  } finally {
+    f.close();
   }
 });
